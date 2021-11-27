@@ -19,7 +19,7 @@ export const query = graphql`
       title
       description
     }
-    image: file(relativePath: { eq: "cbetta.jpg" }) {
+    image: file(relativePath: { eq: "mstella.jpg" }) {
       childImageSharp {
         fixed(width: 150) {
           ...GatsbyImageSharpFixed_withWebp_tracedSVG

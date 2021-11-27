@@ -147,7 +147,7 @@ export default (props) => (
 
 const query = graphql`
   query {
-    image: file(relativePath: { eq: "cbetta.jpg" }) {
+    image: file(relativePath: { eq: "mstella.jpg" }) {
       childImageSharp {
         fixed(width: 20) {
           ...GatsbyImageSharpFixed_withWebp_tracedSVG
