@@ -149,9 +149,9 @@ deploy_web_job: &deploy_web_job
         command: |
           if [ "${CIRCLE_BRANCH}" == "main" ]; \
           then \
-            echo 'export DEPLOYMENT_URI="s3://production.austenconstable.com.us-east-1"' >> $BASH_ENV; \
+            echo 'export DEPLOYMENT_URI="s3://production.miltos.io.us-east-1"' >> $BASH_ENV; \
           else \
-            echo 'export DEPLOYMENT_URI="s3://${CIRCLE_BRANCH}.austenconstable.com.us-east-1"' >> $BASH_ENV; \
+            echo 'export DEPLOYMENT_URI="s3://${CIRCLE_BRANCH}.miltos.io.us-east-1"' >> $BASH_ENV; \
           fi
     - aws-s3/sync:
         from: public
