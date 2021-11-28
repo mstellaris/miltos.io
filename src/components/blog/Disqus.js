@@ -21,7 +21,7 @@ const Disqus = ({
       onClick={() => setShow(true)}>
         <span>
           <DiscussionEmbed 
-            shortname='bettacoding' 
+            shortname='hyperstellarlabs' 
             config={config}
           />
         </span>

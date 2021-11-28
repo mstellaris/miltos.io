@@ -1,0 +1,251 @@
+version: 2.1
+
+orbs:
+  aws-s3: circleci/aws-s3@1.0.8
+
+commands:
+  terraform_environment:
+    description: "Set Terraform Environment"
+    steps:
+      - run:
+          name: set terraform environment
+          command: |
+            cd && touch $BASH_ENV
+            if [ "${CIRCLE_BRANCH}" == "main" ]; then
+              echo 'export TERRAFORM_ENVIRONMENT=production' >> $BASH_ENV
+            else
+              echo 'export TERRAFORM_ENVIRONMENT=${CIRCLE_BRANCH}' >> $BASH_ENV
+            fi
+  terraform_fmt:
+    description: "Run Terraform fmt"
+    parameters:
+      module:
+        type: string
+    steps:
+      - run:
+          name: terraform fmt
+          command: |
+            source $BASH_ENV
+            cd infra/environments/$TERRAFORM_ENVIRONMENT/<< parameters.module >>
+            if [ $(terraform fmt | grep -v .terraform | tee fmt_result.txt | wc -l) -gt 0 ]; then
+              echo "Format of this terraform files is not appropiate:"
+              echo
+              cat fmt_result.txt
+              rm fmt_result.txt
+              git checkout -- .
+              echo
+              echo "Please run terraform fmt"
+              exit 1
+            fi
+  terraform_init:
+    description: "Run Terraform Init"
+    parameters:
+      module:
+        type: string
+    steps:
+      - run:
+          name: terraform init
+          command: |
+            source $BASH_ENV
+            cd infra/environments/$TERRAFORM_ENVIRONMENT/<< parameters.module >>
+            terraform init -input=false
+  terraform_plan:
+    description: "Run Terraform Plan"
+    parameters:
+      module:
+        type: string
+    steps:
+      - run:
+          name: terraform plan
+          command: |
+            source $BASH_ENV
+            cd infra/environments/$TERRAFORM_ENVIRONMENT/<< parameters.module >>
+            terraform plan -input=false -out=../../../../terraform.plan
+  terraform_apply:
+    description: "Run Terraform Apply"
+    parameters:
+      module:
+        type: string
+    steps:
+      - run:
+          name: terraform apply
+          command: |
+            source $BASH_ENV
+            cd infra/environments/$TERRAFORM_ENVIRONMENT/<< parameters.module >>
+            terraform apply --auto-approve -input=false ../../../../terraform.plan
+working_directory: &working_directory
+                     ~/repo
+infra_module_dir: &infra_module_dir
+                    infra
+
+default_config: &default_config
+  docker:
+    - image: 'hashicorp/terraform:0.12.30'
+  working_directory: *working_directory
+
+repo_cache_key: &repo_cache_key
+                  v1-repo-{{ .Branch }}-{{ .Revision }}
+
+restore_repo: &restore_repo
+  restore_cache:
+    key: *repo_cache_key
+
+save_repo: &save_repo
+  save_cache:
+    key: *repo_cache_key
+    paths:
+      - *working_directory
+
+build_web_job: &build_web_job
+  docker:
+    - image: 'circleci/node:12.11.1'
+  working_directory: *working_directory
+  steps:
+    - checkout
+    - restore_cache:
+          keys:
+            - v1-myapp-{{ arch }}-{{ checksum "package.json" }}-{{ checksum "package-lock.json" }}
+            - v1-myapp-
+    - run: sudo npm install -g gatsby-cli@2.19.2
+    - run: mkdir public
+    - run: echo ${CIRCLE_BUILD_NUM} > public/build_number.txt
+    - run: npm install
+    - run: gatsby build
+    - persist_to_workspace:
+          root: *working_directory
+          paths:
+            - public
+    - save_cache:
+          key: v1-myapp-{{ arch }}-{{ checksum "package.json" }}-{{ checksum "package-lock.json" }}
+          paths:
+            - node_modules
+
+test_web_job: &test_web_job
+  docker:
+    - image: 'cibuilds/hugo:0.61'
+  working_directory: *working_directory
+  steps:
+    - attach_workspace:
+        at: *working_directory
+    - run:
+        name: Validate with htmlproofer
+        command: |
+          htmlproofer public \
+          --allow-hash-href \
+          --check-html \
+          --empty-alt-ignore \
+          --disable-external \
+          --file-ignore public/offline-plugin-app-shell-fallback/index.html \
+          --log-level :debug
+deploy_web_job: &deploy_web_job
+  docker:
+    - image: 'circleci/python:2.7'
+  working_directory: *working_directory
+  steps:
+    - attach_workspace:
+        at: *working_directory
+    - run:
+        name: set deployment target uri
+        command: |
+          if [ "${CIRCLE_BRANCH}" == "main" ]; \
+          then \
+            echo 'export DEPLOYMENT_URI="s3://production.austenconstable.com.us-east-1"' >> $BASH_ENV; \
+          else \
+            echo 'export DEPLOYMENT_URI="s3://${CIRCLE_BRANCH}.austenconstable.com.us-east-1"' >> $BASH_ENV; \
+          fi
+    - aws-s3/sync:
+        from: public
+        to: ${DEPLOYMENT_URI}
+        aws-access-key-id: AWS_ACCESS_KEY_ID
+        aws-secret-access-key: AWS_SECRET_ACCESS_KEY
+        aws-region: AWS_REGION
+        arguments: |
+          --acl public-read \
+          --include "*" \
+          --exclude "sw.js" --exclude "*.html" --exclude "page-data/*" \
+          --exclude "rss.xml" --exclude "sitemap.xml" --exclude "robots.txt" \
+          --exclude "build_number.txt" \
+          --cache-control "public,max-age=31536000,immutable" \
+          --delete
+    - aws-s3/sync:
+        from: public
+        to: ${DEPLOYMENT_URI}
+        aws-access-key-id: AWS_ACCESS_KEY_ID
+        aws-secret-access-key: AWS_SECRET_ACCESS_KEY
+        aws-region: AWS_REGION
+        arguments: |
+          --acl public-read \
+          --exclude "*" \
+          --include "sw.js" --include "*.html" --include "page-data/*" \
+          --include "rss.xml" --include "sitemap.xml" --include "robots.txt" \
+          --include "build_number.txt" \
+          --cache-control "public,max-age=0,must-revalidate"    
+workflows:
+  build_deploy:
+    jobs:
+      - infra_build
+      - infra_plan:
+          requires:
+            - infra_build
+      - infra_apply:
+          requires:
+            - infra_plan
+          filters:
+            branches:
+              only: main
+      - app_build_web
+      - app_test_web:
+          requires:
+            - app_build_web
+      - app_deploy_web:
+          requires:
+            - app_test_web
+            - infra_apply
+          filters:
+            branches:
+              only: main
+
+jobs:
+  infra_build:
+    <<: *default_config
+    steps:
+      - checkout
+      - terraform_environment
+      - terraform_fmt:
+          module: *infra_module_dir
+      - *save_repo  
+
+  infra_plan:
+    <<: *default_config
+    steps:
+      - *restore_repo
+      - terraform_environment
+      - terraform_init:
+          module: *infra_module_dir
+      - terraform_plan:
+          module: *infra_module_dir
+      - persist_to_workspace:
+          root: *working_directory
+          paths:
+            - terraform.plan
+
+  infra_apply:
+    <<: *default_config
+    steps:
+      - *restore_repo
+      - terraform_environment
+      - terraform_init:
+          module: *infra_module_dir
+      - attach_workspace:
+          at: *working_directory
+      - terraform_apply:
+          module: *infra_module_dir
+
+  app_build_web:
+    <<: *build_web_job
+
+  app_test_web:
+    <<: *test_web_job
+
+  app_deploy_web:
+    <<: *deploy_web_job

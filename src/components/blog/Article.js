@@ -15,7 +15,7 @@ const Article = ({
   fields
 }) => {
   const disqusConfig = {
-    url: `https://betta.io${fields.slug}`,
+    url: `https://miltos.io${fields.slug}`,
     identifier: id,
     title: frontmatter.title
   }
@@ -28,7 +28,7 @@ const Article = ({
           <small>
             <Icon type={ frontmatter.icon } />
             <span className={style.date}>{ frontmatter.date }</span>
-            <Link className={style.author} to="/">Cristiano Betta</Link>
+            <Link className={style.author} to="/">Miltos Stella</Link>
             <span className={style.ttr}>{ timeToRead } minute read</span>
           </small>
         </h1>
