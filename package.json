@@ -40,7 +40,7 @@
     "gatsby-transformer-sharp": "^2.1.13",
     "gatsby-transformer-yaml": "^2.2.20",
     "node-sass": "^4.11.0",
-    "prismjs": "^1.15.0",
+    "prismjs": "^1.27.0",
     "react": "^16.8.2",
     "react-dom": "^16.8.2",
     "react-helmet": "^5.2.0",
